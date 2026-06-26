@@ -29,8 +29,9 @@ def demo_data():
     rng = np.random.default_rng(7)
     dates = pd.date_range("2026-04-01", "2026-06-25")
     n = 200
+    timestamps = pd.Series(rng.choice(dates, n)) + pd.to_timedelta(rng.integers(0, 86_400, n), unit="s")
     return pd.DataFrame({
-        "날짜": rng.choice(dates, n),
+        "날짜": timestamps,
         "카테고리": rng.choice(CATEGORIES, n, p=[0.28, 0.13, 0.13, 0.13, 0.13, 0.1, 0.1]),
         "지출": rng.integers(3_000, 80_000, n),
     })
@@ -143,6 +144,9 @@ with tab_external:
                 overseas, fx[["날짜", "종가"]], on="날짜", direction="backward"
             ).rename(columns={"종가": "결제일환율"})
             overseas_fx["USD환산"] = (overseas_fx["지출"] / overseas_fx["결제일환율"]).round(2)
+            overseas_fx["지출표시"] = [
+                f"₩{won:,.0f} (${usd:,.2f})" for won, usd in zip(overseas_fx["지출"], overseas_fx["USD환산"])
+            ]
 
         overseas_dates = set(overseas_fx["날짜"].dt.strftime("%Y-%m-%d")) if not overseas_fx.empty else set()
         fx["해외결제"] = fx["날짜문자열"].isin(overseas_dates)
@@ -194,7 +198,15 @@ with tab_external:
                 if not overseas_fx.empty else pd.DataFrame()
             )
             if not day_overseas.empty:
-                st.dataframe(day_overseas[["날짜", "지출", "결제일환율", "USD환산"]], hide_index=True)
+                st.dataframe(
+                    day_overseas[["날짜", "지출표시", "결제일환율"]],
+                    hide_index=True,
+                    column_config={
+                        "날짜": st.column_config.DatetimeColumn("결제 시각", format="YYYY-MM-DD HH:mm"),
+                        "지출표시": st.column_config.TextColumn("지출액 (원/달러)"),
+                        "결제일환율": st.column_config.NumberColumn("결제일환율", format="₩%.2f"),
+                    },
+                )
             else:
                 st.caption("이 날짜에는 해외 결제 내역이 없습니다.")
         else:
@@ -204,12 +216,12 @@ with tab_external:
             st.divider()
             st.subheader("🧳 해외 결제 내역 — 결제일 환율 기준")
             st.dataframe(
-                overseas_fx[["날짜", "지출", "결제일환율", "USD환산"]],
+                overseas_fx[["날짜", "지출표시", "결제일환율"]],
                 hide_index=True,
                 column_config={
-                    "지출": st.column_config.NumberColumn("지출", format="₩%d"),
+                    "날짜": st.column_config.DatetimeColumn("결제 시각", format="YYYY-MM-DD HH:mm"),
+                    "지출표시": st.column_config.TextColumn("지출액 (원/달러)"),
                     "결제일환율": st.column_config.NumberColumn("결제일환율", format="₩%.2f"),
-                    "USD환산": st.column_config.NumberColumn("USD환산", format="$%.2f"),
                 },
             )
     except requests.RequestException:
